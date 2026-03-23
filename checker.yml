@@ -1,0 +1,67 @@
+name: Verificar Stories Instagram
+
+# Colombia = UTC-5
+# Miércoles límite 3pm COL = 20:00 UTC
+# Viernes   límite 8pm COL = 01:00 UTC (sábado)
+
+on:
+  schedule:
+    # ── MARTES (captura publicaciones "día antes" del miércoles) ──
+    - cron: '0 1 * * 3'     # Mar 8pm COL  (miércoles 01:00 UTC)
+    - cron: '0 3 * * 3'     # Mar 10pm COL (miércoles 03:00 UTC)
+
+    # ── MIÉRCOLES (límite 2pm COL + 1h umbral = 3pm COL) ──
+    - cron: '0 14 * * 3'    # Mié 9am COL  (miércoles 14:00 UTC)
+    - cron: '0 17 * * 3'    # Mié 12pm COL (miércoles 17:00 UTC)
+    - cron: '0 20 * * 3'    # Mié 3pm COL  (miércoles 20:00 UTC) ← última válida
+
+    # ── JUEVES (captura publicaciones "día antes" del viernes) ──
+    - cron: '0 1 * * 6'     # Jue 8pm COL  (viernes 01:00 UTC)
+    - cron: '0 3 * * 6'     # Jue 10pm COL (viernes 03:00 UTC)
+
+    # ── VIERNES (límite 7pm COL + 1h umbral = 8pm COL) ──
+    - cron: '0 14 * * 6'    # Vie 9am COL  (viernes 14:00 UTC)
+    - cron: '0 20 * * 6'    # Vie 3pm COL  (viernes 20:00 UTC)
+    - cron: '0 1 * * 0'     # Vie 8pm COL  (sábado 01:00 UTC) ← última válida
+
+  # Correr manualmente para pruebas
+  workflow_dispatch:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Restaurar sesión de Instagram
+        uses: actions/cache@v4
+        with:
+          path: ig_session.json
+          key: ig-session-${{ runner.os }}
+          restore-keys: ig-session-
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install instagrapi supabase python-dateutil
+
+      - name: Correr verificación
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          IG_USERNAME:  ${{ secrets.IG_USERNAME }}
+          IG_PASSWORD:  ${{ secrets.IG_PASSWORD }}
+        run: python checker.py
+
+      - name: Guardar sesión de Instagram
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ig_session.json
+          key: ig-session-${{ runner.os }}
