@@ -1,6 +1,31 @@
 import streamlit as st
 from datetime import datetime
 
+# Definición de los 4 administradores (puedes mover esto a Secrets)
+ADMIN_USERS = {
+    "eli.lopez": "1234",
+    "monica.vallejo": "1234",
+    "daniela.vallejo": "1234",
+    "wendy.marin": "1234"
+}
+
+def login():
+    if "authenticated" not in st.session_state:
+        st.title("🔐 Acceso Administrador")
+        user = st.text_input("Correo electrónico")
+        password = st.text_input("Contraseña", type="password")
+        if st.button("Entrar"):
+            if user in ADMIN_USERS and ADMIN_USERS[user] == password:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Credenciales incorrectas")
+        return False
+    return True
+
+if not login():
+    st.stop() # Detiene el script si no está logueado
+
 def load_historial():
     # Asegúrate de que 'desde' sea un string tipo 'YYYY-MM-DD'
     desde = datetime.now().strftime("%Y-%m-%d")
