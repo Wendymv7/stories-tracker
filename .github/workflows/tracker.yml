@@ -2,12 +2,9 @@ name: Robot de Instagram Santas
 
 on:
   schedule:
-    # Hora UTC. Colombia es UTC-5.
-    # Miércoles a las 2:00 PM COT = 19:00 UTC (Corremos a la 1:55 PM / 18:55 UTC)
     - cron: '55 18 * * 3'
-    # Viernes a las 7:00 PM COT = 00:00 UTC del Sábado (Corremos a las 6:55 PM / 23:55 UTC)
     - cron: '55 23 * * 5'
-  workflow_dispatch: # Permite correrlo manualmente con un botón para probar
+  workflow_dispatch: 
 
 jobs:
   escanear-historias:
@@ -23,7 +20,7 @@ jobs:
 
       - name: Instalar dependencias
         run: |
-          pip install playwright supabase
+          pip install playwright supabase==2.3.0 httpx==0.24.1
           playwright install chromium
 
       - name: Ejecutar Robot Verificador
