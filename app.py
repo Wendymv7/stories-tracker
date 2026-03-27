@@ -11,7 +11,7 @@ st.markdown("""
     .stApp { background-color: #e0b0ff; }
     .stMetric { background-color: rgba(255,255,255,0.6); padding: 15px; border-radius: 15px; }
     h1, h2, h3 { color: #4a235a !important; font-weight: bold; }
-    .stButton>button { border-radius: 20px; font-weight: bold; }
+    .stButton>button { border-radius: 20px; background-color: #8e44ad; color: white; border: none; font-weight: bold; }
     div[data-testid="stExpander"] { background-color: white; border-radius: 10px; color: black; }
 </style>
 """, unsafe_allow_html=True)
@@ -67,11 +67,17 @@ def mostrar_crm():
     if sel != "-- Seleccionar --":
         p = next(c for c in chicas if c["nombre"] == sel)
         an, ad = p.get('amarillas_normales', 0) or 0, p.get('amarillas_directas', 0) or 0
-        multa = ((an // 3) * 100000) + (ad * 100000)
+        abonos_sueltos = p.get('abonos', 0) or 0  # Aquí recuperamos la plata guardada
+        
+        # Matemática de deuda real
+        deuda_tarjetas = ((an // 3) * 100000) + (ad * 100000)
+        deuda_real = max(0, deuda_tarjetas - abonos_sueltos)
         
         st.subheader(f"💜 Perfil: {p['nombre']}")
         col1, col2, col3 = st.columns(3)
-        col1.metric("🟨 Normales", an); col2.metric("🟥 Directas", ad); col3.metric("💸 DEUDA", f"${multa:,.0f}")
+        col1.metric("🟨 Normales", an)
+        col2.metric("🟥 Directas", ad)
+        col3.metric("💸 DEUDA TOTAL", f"${deuda_real:,.0f}", delta=f"Saldo a favor: ${abonos_sueltos:,.0f}" if abonos_sueltos > 0 else None)
 
         c_faltas, c_pagos = st.columns(2)
         with c_faltas:
@@ -80,28 +86,32 @@ def mostrar_crm():
             mot = st.text_input("Motivo / Comentario:")
             if st.button("Guardar Falta", type="primary"):
                 db.table("participantes").update({"amarillas_normales": an+1 if tf=="Normal" else an, "amarillas_directas": ad+1 if tf=="Directa" else ad}).eq("id", p["id"]).execute()
-                try:
-                    db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "no cumplido"}).execute()
+                try: db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "no cumplido"}).execute()
                 except: pass
-                st.success(f"Registrado: {mot}"); st.rerun()
+                st.success(f"Falta guardada: {mot}"); st.rerun()
 
         with c_pagos:
             st.markdown("### 💵 Abono")
-            monto = st.number_input("Monto ($):", min_value=0, step=100000)
-            
-            # Alerta visual si intentan pagar menos de 100k
-            if monto > 0 and monto % 100000 != 0:
-                st.warning("⚠️ El abono debe ser múltiplo de $100,000 para poder descontar tarjetas enteras.")
-
+            monto = st.number_input("Monto ($):", min_value=0, step=10000)
             if st.button("Procesar Pago", type="primary"):
-                ab, nan, nad = monto, an, ad
-                while ab >= 100000 and nad > 0: nad -= 1; ab -= 100000
-                while ab >= 100000 and nan >= 3: nan -= 3; ab -= 100000
-                db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad}).eq("id", p["id"]).execute()
+                # Sumamos el pago de hoy con lo que ya tenía ahorrado
+                bolsa_abonos = monto + abonos_sueltos
+                nan, nad = an, ad
+                
+                # Descontamos tarjetas solo si la bolsa llega a 100k
+                while bolsa_abonos >= 100000 and nad > 0: 
+                    nad -= 1; bolsa_abonos -= 100000
+                while bolsa_abonos >= 100000 and nan >= 3: 
+                    nan -= 3; bolsa_abonos -= 100000
+                
                 try:
-                    db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "cumplido"}).execute()
-                except: pass
-                st.success("Pago procesado"); st.rerun()
+                    # Guardamos las tarjetas actualizadas y el 'vuelto' que quedó en la bolsa
+                    db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad, "abonos": bolsa_abonos}).eq("id", p["id"]).execute()
+                    try: db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "cumplido"}).execute()
+                    except: pass
+                    st.success("Pago procesado"); st.rerun()
+                except Exception as e:
+                    st.error("⚠️ Para abonos parciales, ve a Supabase y crea la columna 'abonos' (tipo int4) en la tabla participantes.")
 
         st.divider()
         with st.expander("🔍 Ver Detalle e Historial"):
