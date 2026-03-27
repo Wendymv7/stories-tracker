@@ -11,7 +11,7 @@ st.markdown("""
     .stApp { background-color: #e0b0ff; }
     .stMetric { background-color: rgba(255,255,255,0.6); padding: 15px; border-radius: 15px; }
     h1, h2, h3 { color: #4a235a !important; font-weight: bold; }
-    .stButton>button { border-radius: 20px; background-color: #8e44ad; color: white; border: none; font-weight: bold; }
+    .stButton>button { border-radius: 20px; font-weight: bold; }
     div[data-testid="stExpander"] { background-color: white; border-radius: 10px; color: black; }
 </style>
 """, unsafe_allow_html=True)
@@ -67,9 +67,8 @@ def mostrar_crm():
     if sel != "-- Seleccionar --":
         p = next(c for c in chicas if c["nombre"] == sel)
         an, ad = p.get('amarillas_normales', 0) or 0, p.get('amarillas_directas', 0) or 0
-        abonos_sueltos = p.get('abonos', 0) or 0  # Aquí recuperamos la plata guardada
+        abonos_sueltos = p.get('abonos', 0) or 0
         
-        # Matemática de deuda real
         deuda_tarjetas = ((an // 3) * 100000) + (ad * 100000)
         deuda_real = max(0, deuda_tarjetas - abonos_sueltos)
         
@@ -86,32 +85,33 @@ def mostrar_crm():
             mot = st.text_input("Motivo / Comentario:")
             if st.button("Guardar Falta", type="primary"):
                 db.table("participantes").update({"amarillas_normales": an+1 if tf=="Normal" else an, "amarillas_directas": ad+1 if tf=="Directa" else ad}).eq("id", p["id"]).execute()
-                try: db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "no cumplido"}).execute()
+                # Ya no insertamos "no cumplido" para no ensuciar al robot
+                try: db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Falta {tf}"}).execute()
                 except: pass
                 st.success(f"Falta guardada: {mot}"); st.rerun()
 
         with c_pagos:
             st.markdown("### 💵 Abono")
             monto = st.number_input("Monto ($):", min_value=0, step=10000)
+            if monto > 0 and monto % 100000 != 0:
+                st.warning("⚠️ El abono debe ser múltiplo de $100,000 para poder descontar tarjetas enteras.")
+
             if st.button("Procesar Pago", type="primary"):
-                # Sumamos el pago de hoy con lo que ya tenía ahorrado
                 bolsa_abonos = monto + abonos_sueltos
                 nan, nad = an, ad
-                
-                # Descontamos tarjetas solo si la bolsa llega a 100k
                 while bolsa_abonos >= 100000 and nad > 0: 
                     nad -= 1; bolsa_abonos -= 100000
                 while bolsa_abonos >= 100000 and nan >= 3: 
                     nan -= 3; bolsa_abonos -= 100000
                 
                 try:
-                    # Guardamos las tarjetas actualizadas y el 'vuelto' que quedó en la bolsa
                     db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad, "abonos": bolsa_abonos}).eq("id", p["id"]).execute()
-                    try: db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "cumplido"}).execute()
+                    # Ya no insertamos "cumplido" falso
+                    try: db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "Pago"}).execute()
                     except: pass
                     st.success("Pago procesado"); st.rerun()
                 except Exception as e:
-                    st.error("⚠️ Para abonos parciales, ve a Supabase y crea la columna 'abonos' (tipo int4) en la tabla participantes.")
+                    st.error("⚠️ Crea la columna 'abonos' en Supabase.")
 
         st.divider()
         with st.expander("🔍 Ver Detalle e Historial"):
@@ -148,11 +148,16 @@ if check_login():
         st.header("📊 Validación de Etiquetas")
         logs = db.table("registros").select("*, participantes(nombre, handle)").order("created_at", desc=True).limit(50).execute()
         for l in (logs.data or []):
-            if l.get('participantes') and "Falta" not in str(l['status']) and "Abono" not in str(l['status']):
+            if l.get('participantes') and "Falta" not in str(l['status']) and "Pago" not in str(l['status']):
                 c1, c2, c3 = st.columns([2, 2, 1])
                 c1.write(f"👤 **{l['participantes']['nombre']}**")
                 c2.write(f"📅 {l['fecha']}")
-                st.success("✅ CUMPLIÓ") if l['status'] == "cumplido" else st.error("❌ NO CUMPLIÓ")
+                
+                # FIX VISUAL: Usamos un bloque if/else tradicional para que no imprima código basura
+                if l['status'] == "cumplido":
+                    c3.success("✅ CUMPLIÓ")
+                else:
+                    c3.error("❌ NO CUMPLIÓ")
                 st.divider()
     else: mostrar_crm()
 else:
