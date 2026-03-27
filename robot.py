@@ -4,110 +4,83 @@ from datetime import datetime
 from supabase import create_client
 from playwright.sync_api import sync_playwright
 
-# 1. Conexión a Supabase usando variables de entorno (GitHub Secrets)
+# Conexión a Supabase
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
 db = create_client(supabase_url, supabase_key)
 
-# 2. Credenciales de Instagram
 IG_USER = os.environ.get("IG_USER")
 IG_PASS = os.environ.get("IG_PASS")
 
 def ejecutar_validacion():
     hoy = datetime.now()
-    dia_semana = hoy.weekday() # 2 es Miércoles, 4 es Viernes
+    dia_semana = hoy.weekday() 
+    etiqueta_esperada = "lajauladelangeloficial" if dia_semana == 2 else "mayorgol_"
     
-    # Determinar la etiqueta según el día
-    etiqueta_esperada = ""
-    if dia_semana == 2: # Miércoles
-        etiqueta_esperada = "lajauladelangeloficial"
-        print("Ejecutando escaneo de Miércoles. Etiqueta:", etiqueta_esperada)
-    elif dia_semana == 4: # Viernes
-        etiqueta_esperada = "mayorgol_"
-        print("Ejecutando escaneo de Viernes. Etiqueta:", etiqueta_esperada)
-    else:
-        print("Hoy no es día de validación programada.")
-        return
-
-    # Obtener participantes activas del CRM
     res = db.table("participantes").select("*").eq("activa", True).execute()
     participantes = res.data
 
-    if not participantes:
-        print("No hay participantes activas.")
-        return
-
-    print("Iniciando navegador Playwright...")
     with sync_playwright() as p:
-        # Lanzamos el navegador
+        # Usamos un User-Agent de una persona real para evitar bloqueos
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={'width': 1280, 'height': 720})
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        )
         page = context.new_page()
 
-        # Login en Instagram
-        print(f"Iniciando sesión con {IG_USER}...")
-        page.goto("https://www.instagram.com/accounts/login/")
-        page.wait_for_selector("input[name='username']", timeout=10000)
-        page.fill("input[name='username']", IG_USER)
-        page.fill("input[name='password']", IG_PASS)
-        page.click("button[type='submit']")
-        page.wait_for_url("https://www.instagram.com/", timeout=15000)
-        print("¡Login exitoso!")
-        time.sleep(3) # Pausa por seguridad anti-bot
+        print(f"Intentando entrar a Instagram para {IG_USER}...")
+        try:
+            page.goto("https://www.instagram.com/accounts/login/", wait_until="networkidle")
+            
+            # Esperamos hasta 30 segundos (antes eran 10) para que aparezca el cuadro de login
+            page.wait_for_selector("input[name='username']", timeout=30000)
+            
+            page.fill("input[name='username']", IG_USER)
+            time.sleep(2)
+            page.fill("input[name='password']", IG_PASS)
+            time.sleep(1)
+            page.click("button[type='submit']")
+            
+            # Esperamos a que cargue el inicio
+            page.wait_for_url("https://www.instagram.com/", timeout=20000)
+            print("¡Login exitoso!")
+            
+        except Exception as e:
+            print(f"Error en Login: {e}")
+            browser.close()
+            return
 
-        # Escanear a cada jugadora/modelo
         for chica in participantes:
             handle = chica["handle"]
-            print(f"Revisando historias de: @{handle}")
-            
+            print(f"Escaneando a: @{handle}")
             try:
-                page.goto(f"https://www.instagram.com/{handle}/")
-                time.sleep(3)
+                page.goto(f"https://www.instagram.com/{handle}/", wait_until="networkidle")
+                time.sleep(4)
                 
+                # Lógica simplificada de detección de historias
+                # Si el círculo de historia existe, lo intentamos clickear
+                circulo = page.locator("header canvas").first
                 estado = "incumplido"
                 
-                # Buscar si hay un elemento de historia (el aro de color)
-                # Nota: La estructura del DOM de Instagram cambia, usamos selectores genéricos de historia
-                historia_disponible = page.locator("div[role='button']:has(canvas)").count() > 0
+                if circulo.is_visible():
+                    circulo.click()
+                    time.sleep(3)
+                    # Buscamos la etiqueta en el texto de la página
+                    if etiqueta_esperada.lower() in page.content().lower():
+                        estado = "cumplido"
                 
-                if historia_disponible:
-                    page.locator("div[role='button']:has(canvas)").first.click()
-                    time.sleep(2)
-                    
-                    # Recorrer historias de las últimas 24h
-                    while True:
-                        texto_pantalla = page.locator("body").inner_text()
-                        if etiqueta_esperada.lower() in texto_pantalla.lower():
-                            estado = "cumplido"
-                            print(f"✅ Etiqueta encontrada en @{handle}")
-                            break
-                        
-                        # Intentar pasar a la siguiente historia
-                        next_btn = page.locator("button[aria-label='Siguiente']")
-                        if next_btn.is_visible():
-                            next_btn.click()
-                            time.sleep(1)
-                        else:
-                            print(f"❌ Historias revisadas, etiqueta no encontrada para @{handle}")
-                            break
-                else:
-                    print(f"⚠️ @{handle} no tiene historias publicadas.")
+                # Guardar en Supabase
+                db.table("registros").upsert({
+                    "participante_id": chica["id"],
+                    "fecha": hoy.strftime("%Y-%m-%d"),
+                    "status": estado
+                }).execute()
+                print(f"Resultado para {handle}: {estado}")
+                
             except Exception as e:
-                print(f"Error revisando a @{handle}: {e}")
-                estado = "incumplido"
-
-            # Guardar el registro en Supabase
-            fecha_str = hoy.strftime("%Y-%m-%d")
-            registro = {
-                "participante_id": chica["id"],
-                "fecha": fecha_str,
-                "status": estado
-            }
-            # Usamos upsert por si el robot corre dos veces el mismo día
-            db.table("registros").upsert(registro, on_conflict="participante_id, fecha").execute()
+                print(f"Error con {handle}: {e}")
 
         browser.close()
-        print("✅ Proceso de validación finalizado con éxito.")
 
 if __name__ == "__main__":
     ejecutar_validacion()
