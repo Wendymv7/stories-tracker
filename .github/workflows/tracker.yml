@@ -16,11 +16,11 @@ jobs:
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10' # Bajamos a 3.10 para mayor estabilidad
 
       - name: Instalar dependencias
         run: |
-          pip install playwright supabase==2.3.0 httpx==0.24.1
+          pip install supabase==2.0.3 playwright
           playwright install chromium
 
       - name: Ejecutar Robot Verificador
