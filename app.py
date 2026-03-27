@@ -85,15 +85,48 @@ def mostrar_crm():
     if seleccion != "-- Seleccionar una cuenta --":
         perfil = next(p for p in participantes if p["nombre"] == seleccion)
         
+        # --- NUEVO: SISTEMA DE MULTAS Y AMONESTACIONES ---
+        st.markdown(f"### ⚠️ Panel Disciplinario: {perfil['nombre']}")
+        
+        # Lógica matemática de las multas
+        amarillas_norm = perfil.get('amarillas_normales', 0)
+        amarillas_dir = perfil.get('amarillas_directas', 0)
+        
+        # Cada 3 normales = 100k, Cada 1 directa = 100k
+        multa_por_normales = (amarillas_norm // 3) * 100000
+        multa_por_directas = amarillas_dir * 100000
+        multa_total = multa_por_normales + multa_por_directas
+        
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("🟨 Amarillas Normales", amarillas_norm)
+        col_m2.metric("🟥 Amarillas Directas", amarillas_dir)
+        col_m3.metric("💸 Multa Acumulada", f"${multa_total:,.0f} COP")
+        
+        if multa_total > 0:
+            st.error(f"🚨 ALERTA: Esta jugadora tiene una multa pendiente de ${multa_total:,.0f} COP.")
+            
+        with st.expander("➕ Agregar Amonestación"):
+            tipo_falta = st.radio("Tipo de Falta:", ["Amarilla Normal (Llegada tarde, uniforme, etc)", "Amarilla Directa (Inasistencia a evento, retiro sin permiso)"])
+            if st.button("Registrar Falta"):
+                if "Normal" in tipo_falta:
+                    db.table("participantes").update({"amarillas_normales": amarillas_norm + 1}).eq("id", perfil["id"]).execute()
+                else:
+                    db.table("participantes").update({"amarillas_directas": amarillas_dir + 1}).eq("id", perfil["id"]).execute()
+                st.success("Falta registrada. Actualizando...")
+                st.rerun()
+                
+        st.markdown("---")
+        # --- FIN DEL NUEVO SISTEMA DE MULTAS ---
+        
         with st.form(f"form_editar_{perfil['id']}"):
-            st.subheader(f"Ficha Técnica: {perfil['nombre']}")
+            st.subheader(f"Ficha Técnica")
             
             col1, col2 = st.columns(2)
             with col1:
                 nombre = st.text_input("Nombre Completo", value=perfil.get("nombre", ""))
                 handle = st.text_input("Instagram Handle", value=perfil.get("handle", ""))
                 tiktok = st.text_input("Usuario de TikTok", value=perfil.get("tiktok", "") or "")
-                cedula = st.text_input("Documento de Identidad (Cédula)", value=perfil.get("cedula", "") or "")
+                cedula = st.text_input("Documento de Identidad", value=perfil.get("cedula", "") or "")
                 correo = st.text_input("Correo Electrónico", value=perfil.get("correo", "") or "")
                 
             with col2:
@@ -104,56 +137,48 @@ def mostrar_crm():
                 rol = st.selectbox("Rol en Santas", opciones_rol, index=index_rol)
                 profesion = st.text_input("Profesión / Ocupación", value=perfil.get("profesion", "") or "")
                 tipo_sangre = st.text_input("Tipo de Sangre", value=perfil.get("tipo_sangre", "") or "")
-                direccion = st.text_input("Dirección de Residencia", value=perfil.get("direccion", "") or "")
+                direccion = st.text_input("Dirección", value=perfil.get("direccion", "") or "")
                 
             col3, col4 = st.columns(2)
             with col3:
                 fnac_val = perfil.get("fecha_nacimiento")
-                fecha_nac = st.date_input("Fecha de Nacimiento", 
-                                          value=datetime.strptime(fnac_val, "%Y-%m-%d") if fnac_val else None)
+                fecha_nac = st.date_input("Fecha de Nacimiento", value=datetime.strptime(fnac_val, "%Y-%m-%d") if fnac_val else None)
             with col4:
                 fing_val = perfil.get("fecha_ingreso_santas")
-                fecha_ingreso = st.date_input("Fecha de Ingreso a Santas", 
-                                              value=datetime.strptime(fing_val, "%Y-%m-%d") if fing_val else None)
+                fecha_ingreso = st.date_input("Fecha de Ingreso", value=datetime.strptime(fing_val, "%Y-%m-%d") if fing_val else None)
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            guardar = st.form_submit_button("💾 Guardar / Actualizar Perfil", type="primary")
+            guardar = st.form_submit_button("💾 Guardar Perfil", type="primary")
             
             if guardar:
                 fnac_str = fecha_nac.strftime("%Y-%m-%d") if fecha_nac else None
                 fing_str = fecha_ingreso.strftime("%Y-%m-%d") if fecha_ingreso else None
                 
-                datos_actualizados = {
-                    "nombre": nombre,
-                    "handle": handle,
-                    "tiktok": tiktok,
-                    "cedula": cedula,
-                    "correo": correo,
-                    "rol": rol,
-                    "profesion": profesion,
-                    "tipo_sangre": tipo_sangre,
-                    "direccion": direccion,
-                    "fecha_nacimiento": fnac_str,
-                    "fecha_ingreso_santas": fing_str
+                datos = {
+                    "nombre": nombre, "handle": handle, "tiktok": tiktok, "cedula": cedula,
+                    "correo": correo, "rol": rol, "profesion": profesion, "tipo_sangre": tipo_sangre,
+                    "direccion": direccion, "fecha_nacimiento": fnac_str, "fecha_ingreso_santas": fing_str
                 }
-                
                 try:
-                    db.table("participantes").update(datos_actualizados).eq("id", perfil["id"]).execute()
-                    st.success("¡Perfil actualizado correctamente en la base de datos!")
+                    db.table("participantes").update(datos).eq("id", perfil["id"]).execute()
+                    st.success("Perfil actualizado.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error al guardar los datos: {e}")
+                    st.error(f"Error: {e}")
 
 # 5. ESTRUCTURA PRINCIPAL DE LA APLICACIÓN
 if check_login():
     st.sidebar.markdown("---")
-    menu = st.sidebar.radio("Navegación del Sistema", ["📱 Panel de Validación", "👥 CRM Perfiles Santas"])
+    menu = st.sidebar.radio("Navegación", ["📱 Panel de Validación", "👥 CRM Perfiles Santas"])
     
     if menu == "📱 Panel de Validación":
         st.title("📊 Stories Tracker - Panel Principal")
-        st.write("Bienvenida al centro de control. Aquí podrás verificar el cumplimiento de las etiquetas en Instagram.")
+        st.write("Verificación de cumplimiento de etiquetas en Instagram.")
+        
+        # Aquí prepararemos el botón para iniciar el robot
+        if st.button("🚀 Iniciar Escaneo de Historias", type="primary"):
+            st.info("El motor de validación se conectará en el siguiente paso. ¡Prepárate!")
         
     elif menu == "👥 CRM Perfiles Santas":
         mostrar_crm()
 else:
-    st.info("👈 Por favor, ingresa tus credenciales en el menú lateral para acceder al sistema.")
+    st.info("👈 Ingresa credenciales.")
