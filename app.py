@@ -1,7 +1,11 @@
 import streamlit as st
 from supabase import create_client
+from datetime import datetime
 
-# 1. INICIALIZAR LA BASE DE DATOS (Evita el error rojo)
+# Configuración básica de la página
+st.set_page_config(page_title="Santas Tracker & CRM", page_icon="🛡️", layout="wide")
+
+# 1. INICIALIZAR LA BASE DE DATOS
 if "db" not in st.session_state:
     try:
         url = st.secrets["SUPABASE_URL"]
@@ -11,11 +15,12 @@ if "db" not in st.session_state:
         st.error(f"Fallo crítico al conectar con Supabase: {e}")
         st.stop()
 
-# 2. SISTEMA DE LOGIN PARA LAS 4 ADMINISTRADORAS
+db = st.session_state.db
+
+# 2. SISTEMA DE LOGIN PARA ADMINISTRADORAS
 def check_login():
-    st.sidebar.title("🔐 Acceso Admin")
+    st.sidebar.title("🔐 Acceso Admin Santas")
     
-    # Si la sesión está activa, mostrar nombre y botón de salir
     if st.session_state.get("logged_in"):
         st.sidebar.success(f"Conectada como: {st.session_state.admin_name}")
         if st.sidebar.button("Cerrar Sesión"):
@@ -23,7 +28,6 @@ def check_login():
             st.rerun()
         return True
 
-    # Si no hay sesión, mostrar el formulario
     with st.sidebar.form("login_form"):
         usuario = st.text_input("Usuario (ej: eli.lopez)")
         clave = st.text_input("Contraseña", type="password")
@@ -31,10 +35,7 @@ def check_login():
 
     if entrar:
         try:
-            # Consultamos exactamente tu tabla 'administradores'
-            res = st.session_state.db.table("administradores")\
-                .select("*").eq("email", usuario).eq("password", clave).execute()
-            
+            res = db.table("administradores").select("*").eq("email", usuario).eq("password", clave).execute()
             if len(res.data) > 0:
                 st.session_state.logged_in = True
                 st.session_state.admin_name = res.data[0]["nombre"]
@@ -46,23 +47,68 @@ def check_login():
             
     return False
 
-# 3. EJECUCIÓN DEL PANEL PRINCIPAL (Solo visible si hay login)
-if check_login():
-    st.title("📊 Stories Tracker - Panel de Control")
-    st.write(f"¡Bienvenida al sistema, {st.session_state.admin_name}!")
+# 3. LÓGICA DEL CRM Y PERFILES
+def check_cumpleanos(participantes):
+    hoy = datetime.now()
+    cumpleaneras = []
+    
+    for p in participantes:
+        if p.get("fecha_nacimiento"):
+            try:
+                # Convertir el string de la BD a un objeto fecha de Python
+                fecha_nac = datetime.strptime(p["fecha_nacimiento"], "%Y-%m-%d")
+                if fecha_nac.month == hoy.month and fecha_nac.day == hoy.day:
+                    cumpleaneras.append(p["nombre"])
+            except:
+                pass
+                
+    if cumpleaneras:
+        nombres = ", ".join(cumpleaneras)
+        st.balloons()
+        st.warning(f"🎉 **¡ALERTA DE CUMPLEAÑOS!** Hoy celebramos a: **{nombres}**. ¡No olviden felicitarla!")
+
+def mostrar_crm():
+    st.header("👥 CRM - Perfiles Santas")
+    
+    # Consultar todas las niñas ordenadas alfabéticamente
+    res = db.table("participantes").select("*").order("nombre").execute()
+    participantes = res.data
+    
+    if not participantes:
+        st.info("No hay perfiles registrados en la base de datos.")
+        return
+
+    # Verificar si hay cumpleaños hoy
+    check_cumpleanos(participantes)
     
     st.markdown("---")
     
-    # Aquí puedes hacer una prueba rápida para ver si lee a las 6 niñas
-    st.subheader("Niñas en la base de datos:")
-    try:
-        ninas = st.session_state.db.table("participantes").select("*").execute()
-        if len(ninas.data) > 0:
-            st.dataframe(ninas.data) # Muestra la tabla en pantalla
-        else:
-            st.info("La tabla de participantes está vacía. Necesitas sincronizar el Excel.")
-    except Exception as e:
-        st.error(f"Error al cargar participantes: {e}")
+    # Selector para buscar a la niña
+    nombres = [p["nombre"] for p in participantes]
+    seleccion = st.selectbox("🔍 Buscar perfil para visualizar o editar:", ["-- Seleccionar una cuenta --"] + nombres)
+    
+    if seleccion != "-- Seleccionar una cuenta --":
+        # Extraer los datos de la niña seleccionada
+        perfil = next(p for p in participantes if p["nombre"] == seleccion)
         
-else:
-    st.info("👈 Por favor, ingresa tus credenciales en el menú lateral para ver el panel de control.")
+        with st.form(f"form_editar_{perfil['id']}"):
+            st.subheader(f"Ficha Técnica: {perfil['nombre']}")
+            
+            # Formulario a dos columnas para mejor diseño
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                nombre = st.text_input("Nombre Completo", value=perfil.get("nombre", ""))
+                handle = st.text_input("Instagram Handle", value=perfil.get("handle", ""))
+                tiktok = st.text_input("Usuario de TikTok", value=perfil.get("tiktok", "") or "")
+                cedula = st.text_input("Documento de Identidad (Cédula)", value=perfil.get("cedula", "") or "")
+                correo = st.text_input("Correo Electrónico", value=perfil.get("correo", "") or "")
+                
+            with col2:
+                # Lógica para preseleccionar el rol correcto
+                rol_actual = perfil.get("rol")
+                opciones_rol = ["futbolista", "modelo"]
+                index_rol = opciones_rol.index(rol_actual) if rol_actual in opciones_rol else 0
+                    
+                rol = st.selectbox("Rol en Santas", opciones_rol, index=index_rol)
+                profesion = st.text
