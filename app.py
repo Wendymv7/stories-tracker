@@ -151,24 +151,58 @@ if check_login():
         res_chicas = db.table("participantes").select("id, nombre, handle").order("nombre").execute()
         lista_chicas = res_chicas.data or []
         
-        # 2. Traemos los "cumplidos" que ha puesto el robot HOY
+        # 2. Traemos los "cumplidos" puestos hoy
         res_logs = db.table("registros").select("participante_id").eq("fecha", hoy_str).eq("status", "cumplido").execute()
         ids_cumplidos = [log["participante_id"] for log in (res_logs.data or [])]
         
         if not lista_chicas:
             st.info("No hay participantes en la base de datos.")
         else:
-            for chica in lista_chicas:
+            # --- BUSCADOR ---
+            b_col1, b_col2 = st.columns([3, 1])
+            busqueda = b_col1.text_input("🔍 Buscar por nombre o usuario de IG:")
+            
+            if busqueda:
+                lista_chicas = [c for c in lista_chicas if busqueda.lower() in c['nombre'].lower() or busqueda.lower() in str(c.get('handle', '')).lower()]
+            
+            # --- MÉTRICAS ---
+            total = len(lista_chicas)
+            cumplieron = len([c for c in lista_chicas if c["id"] in ids_cumplidos])
+            faltan = total - cumplieron
+            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("👥 Total Evaluadas", total)
+            m2.metric("✅ Cumplieron", cumplieron)
+            m3.metric("❌ Pendientes", faltan)
+            
+            st.divider()
+            
+            # --- PESTAÑAS (TABS) PARA ORGANIZAR ---
+            tab_todas, tab_ok, tab_faltan = st.tabs(["📋 Ver Todas", "✅ Solo Cumplieron", "❌ Solo Pendientes"])
+            
+            def mostrar_fila(chica, cumplio):
                 c1, c2, c3 = st.columns([2, 2, 1])
                 c1.write(f"👤 **{chica['nombre']}** (@{chica.get('handle', 'Sin IG')})")
                 c2.write(f"📅 {hoy_str}")
-                
-                # Cruzamos datos: Si la niña está en la lista de los que cumplieron hoy...
-                if chica["id"] in ids_cumplidos:
+                if cumplio:
                     c3.success("✅ CUMPLIÓ")
                 else:
                     c3.error("❌ NO CUMPLIÓ")
                 st.divider()
+            
+            with tab_todas:
+                for chica in lista_chicas:
+                    mostrar_fila(chica, chica["id"] in ids_cumplidos)
+                    
+            with tab_ok:
+                for chica in lista_chicas:
+                    if chica["id"] in ids_cumplidos:
+                        mostrar_fila(chica, True)
+                        
+            with tab_faltan:
+                for chica in lista_chicas:
+                    if chica["id"] not in ids_cumplidos:
+                        mostrar_fila(chica, False)
     else:
         mostrar_crm()
 else:
