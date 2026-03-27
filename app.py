@@ -6,13 +6,14 @@ import urllib.parse
 # 1. SETUP INICIAL
 st.set_page_config(page_title="Santas Admin Pro", page_icon="⚽", layout="wide")
 
-# LILA VIBRANTE
+# ESTÉTICA LILA VIVIENTE
 st.markdown("""
 <style>
     .stApp { background-color: #e0b0ff; }
     .stMetric { background-color: rgba(255,255,255,0.6); padding: 15px; border-radius: 15px; }
     h1, h2, h3 { color: #4a235a !important; font-weight: bold; }
     .stButton>button { border-radius: 20px; background-color: #8e44ad; color: white; border: none; }
+    div[data-testid="stExpander"] { background-color: white; border-radius: 10px; color: black; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -39,7 +40,7 @@ def check_login():
                 st.rerun()
     return False
 
-# 4. ALERTA CUMPLES Y WHATSAPP (Corregido para evitar cortes)
+# 4. ALERTA CUMPLES
 def alerta_cumples(chicas):
     hoy = datetime.now()
     for c in chicas:
@@ -49,13 +50,11 @@ def alerta_cumples(chicas):
                 ca = fn.replace(year=hoy.year)
                 if 0 <= (ca - hoy).days <= 2:
                     st.warning(f"🎂 **CUMPLE CERCA:** {c['nombre']} ({ca.strftime('%d/%m')})")
-                    # Creamos el link de forma limpia
-                    msg = urllib.parse.quote(f"¡Hola equipo! 💜 El {ca.strftime('%d/%m')} cumple {c['nombre']}. ¿Lista la publicidad? ⚽")
-                    link = f"https://wa.me/?text={msg}"
-                    st.markdown(f'[📲 Avisar por WhatsApp]({link})')
+                    msg = urllib.parse.quote(f"¡Hola equipo! 💜 El {ca.strftime('%d/%m')} cumple {c['nombre']}. ¿Lista la pieza publicitaria? ⚽")
+                    st.markdown(f'[📲 Avisar por WhatsApp](https://wa.me/?text={msg})')
             except: pass
 
-# 5. CRM
+# 5. CRM Y CONTABILIDAD
 def mostrar_crm():
     st.header("👥 Gestión de Santas FC")
     res = db.table("participantes").select("*").order("nombre").execute()
@@ -81,37 +80,74 @@ def mostrar_crm():
             mot = st.text_input("Motivo:")
             if st.button("Guardar Falta"):
                 db.table("participantes").update({"amarillas_normales": an+1 if tf=="Normal" else an, "amarillas_directas": ad+1 if tf=="Directa" else ad}).eq("id", p["id"]).execute()
+                db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Falta {tf}: {mot}"}).execute()
                 st.rerun()
 
         with col_p:
-            st.subheader("💵 Abono")
+            st.markdown("### 💵 Abono")
             monto = st.number_input("Monto ($):", min_value=0, step=100000)
             if st.button("Procesar Pago"):
                 ab, nan, nad = monto, an, ad
-                while ab >= 100000 and nad > 0:
-                    nad -= 1; ab -= 100000
-                while ab >= 100000 and nan >= 3:
-                    nan -= 3; ab -= 100000
-                db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad}).eq("id", p["id"]).execute(); st.rerun()
+                while ab >= 100000 and nad > 0: nad -= 1; ab -= 100000
+                while ab >= 100000 and nan >= 3: nan -= 3; ab -= 100000
+                db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad}).eq("id", p["id"]).execute()
+                db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Abono Pago: ${monto:,.0f}"}).execute()
+                st.rerun()
 
         st.divider()
         with st.expander("🔍 Ver Detalle e Historial"):
             logs = db.table("registros").select("*").eq("participante_id", p["id"]).order("created_at", desc=True).execute()
-            for l in (logs.data or []):
-                st.write(f"📅 {l['fecha']} | {l['status']}")
+            if logs.data:
+                for l in logs.data: st.write(f"📅 {l['fecha']} | {l['status']}")
+            else: st.write("Sin historial.")
+
+        st.divider()
+        with st.form("ficha_full"):
+            st.subheader("📝 Ficha Técnica Completa")
+            izq, der = st.columns(2)
+            nom = izq.text_input("Nombre", value=p.get("nombre", ""))
+            hdl = der.text_input("Instagram", value=p.get("handle", ""))
+            tk = izq.text_input("TikTok", value=p.get("tiktok", "") or "")
+            ced = der.text_input("Cédula", value=p.get("cedula", "") or "")
+            mail = izq.text_input("Correo", value=p.get("correo", "") or "")
+            sang = der.text_input("Sangre", value=p.get("tipo_sangre", "") or "")
+            dir_c = izq.text_input("Dirección", value=p.get("direccion", "") or "")
+            prof = der.text_input("Profesión", value=p.get("profesion", "") or "")
+            
+            f1, f2 = st.columns(2)
+            fn_v = p.get("fecha_nacimiento"); fi_v = p.get("fecha_ingreso_santas")
+            f_nac = f1.date_input("Nacimiento", value=datetime.strptime(fn_v, "%Y-%m-%d") if fn_v else datetime(2000,1,1))
+            f_ing = f2.date_input("Ingreso", value=datetime.strptime(fi_v, "%Y-%m-%d") if fi_v else datetime.now())
+
+            if st.form_submit_button("💾 Guardar Cambios"):
+                db.table("participantes").update({
+                    "nombre": nom, "handle": hdl, "tiktok": tk, "cedula": ced,
+                    "correo": mail, "tipo_sangre": sang, "direccion": dir_c, "profesion": prof,
+                    "fecha_nacimiento": f_nac.strftime("%Y-%m-%d"), "fecha_ingreso_santas": f_ing.strftime("%Y-%m-%d")
+                }).eq("id", p["id"]).execute(); st.rerun()
 
 # 6. FLUJO PRINCIPAL
 if check_login():
     st.sidebar.divider()
-    menu = st.sidebar.radio("Navegación", ["📱 Validación Robot", "👥 CRM Santas"])
-    if menu == "📱 Validación Robot":
-        st.title("📊 Stories Tracker")
-        logs = db.table("registros").select("*, participantes(nombre)").order("created_at", desc=True).limit(50).execute()
-        for l in (logs.data or []):
-            if l.get('participantes') and "Falta" not in str(l['status']) and "Abono" not in str(l['status']):
-                col1, col2, col3 = st.columns([2, 2, 1])
-                col1.write(f"👤 {l['participantes']['nombre']}"); col2.write(f"📅 {l['fecha']}")
-                st.success("✅ OK") if l['status'] == "cumplido" else st.error("❌ NO")
-    else: mostrar_crm()
+    menu = st.sidebar.radio("Navegación", ["📋 Validación Etiquetas", "👥 CRM Perfiles Santas"])
+    
+    if menu == "📋 Validación Etiquetas":
+        st.header("📊 Validación de Etiquetas (Instagram)")
+        st.write("Resultados del último escaneo automático del robot:")
+        try:
+            logs = db.table("registros").select("*, participantes(nombre, handle)").order("created_at", desc=True).limit(50).execute()
+            for l in (logs.data or []):
+                # Solo mostramos los logs que NO son de contabilidad (Falta/Abono)
+                if l.get('participantes') and "Falta" not in str(l['status']) and "Abono" not in str(l['status']):
+                    c1, c2, c3 = st.columns([2, 2, 1])
+                    c1.write(f"👤 **{l['participantes']['nombre']}** (@{l['participantes']['handle']})")
+                    c2.write(f"📅 {l['fecha']}")
+                    if l['status'] == "cumplido": st.success("✅ CUMPLIÓ")
+                    else: st.error("❌ NO CUMPLIÓ")
+                    st.divider()
+        except Exception as e:
+            st.warning("Esperando datos del robot...")
+    else:
+        mostrar_crm()
 else:
-    st.title("💜 Santas FC - Admin"); st.info("Ingresa tus credenciales.")
+    st.title("💜 Santas FC - Admin"); st.info("Ingresa tus credenciales para comenzar.")
