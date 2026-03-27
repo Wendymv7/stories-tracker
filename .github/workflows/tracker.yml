@@ -1,31 +1,37 @@
-  name: Robot de Instagram Santas
+name: Robot Santas FC (Escáner de Instagram)
 
 on:
   schedule:
-    - cron: '55 18 * * 3'
-    - cron: '55 23 * * 5'
-  workflow_dispatch: 
+    # --- RONDAS DEL MIÉRCOLES (Límite 2:00 PM COT) ---
+    - cron: '0 23 * * 2'  # Martes a las 6:00 PM (Hora Colombia)
+    - cron: '0 13 * * 3'  # Miércoles a las 8:00 AM
+    - cron: '30 18 * * 3' # Miércoles a la 1:30 PM (Último escaneo antes del límite)
+    
+    # --- RONDAS DEL VIERNES (Límite 7:00 PM COT) ---
+    - cron: '0 3 * * 5'   # Jueves a las 10:00 PM (Hora Colombia)
+    - cron: '0 14 * * 5'  # Viernes a las 9:00 AM
+    - cron: '0 19 * * 5'  # Viernes a las 2:00 PM
+    - cron: '30 23 * * 5' # Viernes a las 6:30 PM (Último escaneo antes del límite)
+
+  workflow_dispatch: # Esto nos permite ejecutarlo manualmente con un clic para probarlo
 
 jobs:
-  escanear-historias:
+  run-robot:
     runs-on: ubuntu-latest
     steps:
-      - name: Clonar código
-        uses: actions/checkout@v4
+      - name: Descargar el código
+        uses: actions/checkout@v3
 
       - name: Configurar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.10' # Bajamos a 3.10 para mayor estabilidad
+          python-version: '3.10'
 
-      - name: Instalar dependencias
+      - name: Instalar librerías
         run: |
-          pip install supabase playwright
-          playwright install
-          pip install supabase==2.0.3 playwright
-          playwright install chromium
+          pip install instaloader supabase
 
-      - name: Ejecutar Robot Verificador
+      - name: Iniciar Escaneo
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
