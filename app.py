@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client
 from datetime import datetime
+import urllib.parse
 
 # 1. SETUP
 st.set_page_config(page_title="Santas Admin Pro", page_icon="⚽", layout="wide")
@@ -11,6 +12,7 @@ st.markdown("""
     .stMetric { background-color: rgba(255,255,255,0.6); padding: 15px; border-radius: 15px; }
     h1, h2, h3 { color: #4a235a !important; font-weight: bold; }
     .stButton>button { border-radius: 20px; background-color: #8e44ad; color: white; border: none; }
+    div[data-testid="stExpander"] { background-color: white; border-radius: 10px; color: black; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -35,6 +37,8 @@ def check_login():
             if res.data:
                 st.session_state.logged_in, st.session_state.admin_name = True, res.data[0]["nombre"]
                 st.rerun()
+            else:
+                st.sidebar.error("Datos incorrectos")
     return False
 
 # 4. ALERTA CUMPLES
@@ -48,9 +52,8 @@ def alerta_cumples(chicas):
                 if ca < hoy: ca = ca.replace(year=hoy.year + 1)
                 if 0 <= (ca - hoy).days <= 2:
                     st.warning(f"🎂 **CUMPLE CERCA:** {c['nombre']} ({ca.strftime('%d/%m')})")
-                    import urllib.parse
                     msg = urllib.parse.quote(f"¡Hola! 💜 El {ca.strftime('%d/%m')} cumple {c['nombre']}. ¿Lista la publicidad? ⚽")
-                    st.markdown(f'[📲 Avisar WhatsApp](https://wa.me/?text={msg})')
+                    st.markdown(f'[📲 Avisar por WhatsApp](https://wa.me/?text={msg})')
             except: pass
 
 # 5. CRM
@@ -76,9 +79,16 @@ def mostrar_crm():
         with c_faltas:
             st.markdown("### ➕ Sanción")
             tf = st.radio("Tipo:", ["Normal", "Directa"], horizontal=True)
+            mot = st.text_input("Motivo / Comentario:")
             if st.button("Guardar Falta"):
                 db.table("participantes").update({"amarillas_normales": an+1 if tf=="Normal" else an, "amarillas_directas": ad+1 if tf=="Directa" else ad}).eq("id", p["id"]).execute()
-                db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "no cumplido"}).execute()
+                
+                # Escudo anti-caídas: Intenta guardar el motivo en el historial
+                status_txt = f"Falta {tf}: {mot}" if mot else f"Falta {tf}"
+                try:
+                    db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": status_txt}).execute()
+                except Exception:
+                    pass # Si Supabase lo bloquea, la app ignora el error y sigue viva
                 st.rerun()
 
         with c_pagos:
@@ -88,11 +98,26 @@ def mostrar_crm():
                 ab, nan, nad = monto, an, ad
                 while ab >= 100000 and nad > 0: nad -= 1; ab -= 100000
                 while ab >= 100000 and nan >= 3: nan -= 3; ab -= 100000
-                db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad}).eq("id", p["id"]).execute(); st.rerun()
+                db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad}).eq("id", p["id"]).execute()
+                
+                # Escudo anti-caídas para el abono
+                try:
+                    db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Abono: ${monto:,.0f}"}).execute()
+                except Exception:
+                    pass
+                st.rerun()
+
+        st.divider()
+        with st.expander("🔍 Ver Detalle e Historial"):
+            try:
+                logs = db.table("registros").select("*").eq("participante_id", p["id"]).order("created_at", desc=True).execute()
+                for l in (logs.data or []): st.write(f"📅 {l['fecha']} | {l['status']}")
+            except:
+                st.write("Historial no disponible.")
 
         st.divider()
         with st.form("ficha_full"):
-            st.subheader("📝 Ficha Técnica")
+            st.subheader("📝 Ficha Técnica Completa")
             iz, de = st.columns(2)
             n_ = iz.text_input("Nombre", value=p.get("nombre", ""))
             h_ = de.text_input("Instagram", value=p.get("handle", ""))
