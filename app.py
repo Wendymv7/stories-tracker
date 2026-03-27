@@ -1,3 +1,5 @@
+st.title("Prueba de conexión visual")
+
 import streamlit as st
 from supabase import create_client
 from datetime import datetime
