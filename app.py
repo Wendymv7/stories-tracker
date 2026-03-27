@@ -6,13 +6,13 @@ import urllib.parse
 # 1. SETUP INICIAL
 st.set_page_config(page_title="Santas Admin Pro", page_icon="⚽", layout="wide")
 
-# ESTÉTICA LILA SANTAS (Corregido unsafe_allow_html)
+# LILA MÁS VIVO (Orquídea Santas)
 st.markdown("""
 <style>
-    .stApp { background-color: #f3e5f5; }
-    .stMetric { color: #8e44ad; }
-    h1, h2, h3 { color: #6c3483; }
-    div[data-testid="stExpander"] { background-color: white; border-radius: 10px; }
+    .stApp { background-color: #e0b0ff; }
+    .stMetric { background-color: rgba(255,255,255,0.5); padding: 10px; border-radius: 10px; color: #6c3483; }
+    h1, h2, h3 { color: #4a235a !important; font-weight: bold; }
+    .stButton>button { border-radius: 20px; background-color: #8e44ad; color: white; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -39,23 +39,20 @@ def check_login():
                 st.rerun()
     return False
 
-# 4. ALERTA DE CUMPLE Y WHATSAPP
+# 4. ALERTA CUMPLES Y WHATSAPP
 def alerta_cumples(chicas):
     hoy = datetime.now()
     for c in chicas:
         if c.get("fecha_nacimiento"):
-            f_nac = datetime.strptime(c["fecha_nacimiento"], "%Y-%m-%d")
-            cumple_este_año = f_nac.replace(year=hoy.year)
-            dias_faltan = (cumple_este_año - hoy).days
-            
-            if 0 <= dias_faltan <= 2: # Alerta desde 2 días antes
-                msg = f"📣 *ALERTA CUMPLE:* {c['nombre']} cumple el {cumple_este_año.strftime('%d/%m')}. ¡Preparen la publicidad!"
-                st.warning(msg)
-                
-                # Botón de WhatsApp
-                texto_ws = urllib.parse.quote(f"Hola equipo Santas! 💜 Recuerden que pronto es el cumple de {c['nombre']} para que saquen la publicidad. 🎂")
-                link_ws = f"https://wa.me/?text={texto_ws}"
-                st.markdown(f'<a href="{link_ws}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer;">📲 Avisar por WhatsApp</button></a>', unsafe_allow_html=True)
+            try:
+                f_nac = datetime.strptime(c["fecha_nacimiento"], "%Y-%m-%d")
+                cumple_act = f_nac.replace(year=hoy.year)
+                diff = (cumple_act - hoy).days
+                if 0 <= diff <= 2:
+                    st.warning(f"🎂 **PROXIMO CUMPLE:** {c['nombre']} ({cumple_act.strftime('%d/%m')})")
+                    t = urllib.parse.quote(f"¡Hola equipo! 💜 El {cumple_act.strftime('%d/%m')} es el cumple de {c['nombre']}. ¿Lista la publicidad? ⚽")
+                    st.markdown(f'<a href="https://wa.me/?text={t}" target="_blank"><button style="background-color:#25D366;color:white;border:none;padding:8px 15px;border-radius:10px;">📲 Avisar por WhatsApp</button></a>', unsafe_allow_html=True)
+            except: pass
 
 # 5. CRM
 def mostrar_crm():
@@ -81,42 +78,26 @@ def mostrar_crm():
         with col_f:
             st.markdown("### ➕ Sanción")
             tipo_f = st.radio("Tipo:", ["Normal", "Directa"], horizontal=True)
-            motivo = st.text_input("Motivo:")
+            motivo = st.text_input("Motivo de la falta:")
             if st.button("Guardar Falta"):
-                db.table("participantes").update({"amarillas_normales": an + 1 if tipo_f == "Normal" else an, "amarillas_directas": ad + 1 if tipo_f == "Directa" else ad}).eq("id", p["id"]).execute()
-                db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Falta {tipo_f}: {motivo}"}).execute()
+                # Actualizar puntos
+                db.table("participantes").update({
+                    "amarillas_normales": an + 1 if tipo_f == "Normal" else an,
+                    "amarillas_directas": ad + 1 if tipo_f == "Directa" else ad
+                }).eq("id", p["id"]).execute()
+                
+                # Insertar en registros (Solución al error de API)
+                info_status = f"Falta {tipo_f}: {motivo}" if motivo else f"Falta {tipo_f}"
+                db.table("registros").insert({
+                    "participante_id": p["id"],
+                    "fecha": datetime.now().strftime("%Y-%m-%d"),
+                    "status": info_status
+                }).execute()
                 st.rerun()
+
         with col_p:
             st.markdown("### 💵 Abono")
             monto = st.number_input("Monto ($):", min_value=0, step=100000)
             if st.button("Procesar Pago"):
                 ab, nan, nad = monto, an, ad
-                while ab >= 100000 and nad > 0: nad -= 1; ab -= 100000
-                while ab >= 100000 and nan >= 3: nan -= 3; ab -= 100000
-                db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad}).eq("id", p["id"]).execute()
-                db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Abono: ${monto:,.0f}"}).execute()
-                st.rerun()
-
-        st.divider()
-        with st.expander("🔍 Ver Detalle e Historial"):
-            logs = db.table("registros").select("*").eq("participante_id", p["id"]).order("created_at", desc=True).execute()
-            for l in (logs.data or []):
-                st.write(f"📅 {l['fecha']} | {l['status']}")
-
-# 6. FLUJO PRINCIPAL
-if check_login():
-    st.sidebar.divider()
-    opcion = st.sidebar.radio("Navegación", ["📱 Validación Robot", "👥 CRM Santas"])
-    if opcion == "📱 Validación Robot":
-        st.title("📊 Stories Tracker")
-        logs = db.table("registros").select("*, participantes(nombre)").order("created_at", desc=True).limit(50).execute()
-        for l in (logs.data or []):
-            if "Falta" not in l['status'] and "Abono" not in l['status']:
-                c1, c2, c3 = st.columns([2, 2, 1])
-                c1.write(f"👤 {l['participantes']['nombre']}")
-                c2.write(f"📅 {l['fecha']}")
-                if l['status'] == "cumplido": st.success("✅ OK")
-                else: st.error("❌ NO")
-    else: mostrar_crm()
-else:
-    st.title("💜 Santas FC - Admin"); st.info("Ingresa tus credenciales.")
+                while ab >= 100000 and nad > 0
