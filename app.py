@@ -1,17 +1,18 @@
 import streamlit as st
 from supabase import create_client
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# 1. SETUP
+# 1. SETUP INICIAL
 st.set_page_config(page_title="Santas Admin Pro", page_icon="⚽", layout="wide")
 
-# Estilo CSS para poner títulos en morado
+# CSS CORREGIDO (Lila Santas)
 st.markdown("""
-    <style>
+<style>
+    .stApp { background-color: #f3e5f5; }
     .stMetric { color: #8e44ad; }
     h1, h2, h3 { color: #6c3483; }
-    </style>
-    """, unsafe_allow_code=True)
+</style>
+""", unsafe_allow_code=True)
 
 # 2. CONEXIÓN
 if "db" not in st.session_state:
@@ -19,7 +20,7 @@ if "db" not in st.session_state:
     st.session_state.db = create_client(u, k)
 db = st.session_state.db
 
-# 3. LOGIN (Simplificado)
+# 3. LOGIN
 def check_login():
     st.sidebar.title("🔐 Acceso Admin")
     if st.session_state.get("logged_in"):
@@ -36,12 +37,31 @@ def check_login():
                 st.rerun()
     return False
 
-# 4. CRM Y CONTABILIDAD
+# 4. ALERTA DE CUMPLEAÑOS (2 DÍAS ANTES)
+def alerta_cumples(chicas):
+    hoy = datetime.now()
+    proximos = []
+    for c in chicas:
+        if c.get("fecha_nacimiento"):
+            f_nac = datetime.strptime(c["fecha_nacimiento"], "%Y-%m-%d")
+            # Creamos la fecha del cumple para este año
+            cumple_este_año = f_nac.replace(year=hoy.year)
+            dias_faltan = (cumple_este_año - hoy).days
+            
+            if 0 <= dias_faltan <= 2: # Hoy, mañana o pasado mañana
+                proximos.append(f"{c['nombre']} ({cumple_este_año.strftime('%d/%m')})")
+    
+    if proximos:
+        st.warning(f"📣 **¡PUBLICIDAD LISTA!** Cumpleaños cerca: {', '.join(proximos)}. ¡Preparen los diseños!")
+
+# 5. CRM
 def mostrar_crm():
     st.header("👥 Gestión de Santas FC")
     res = db.table("participantes").select("*").order("nombre").execute()
     chicas = res.data
     if not chicas: st.info("Sin registros"); return
+
+    alerta_cumples(chicas) # Llamamos la alerta aquí
 
     sel = st.selectbox("Seleccionar niña:", ["-- Seleccionar --"] + [c["nombre"] for c in chicas])
     
@@ -58,14 +78,11 @@ def mostrar_crm():
         with col_f:
             st.markdown("### ➕ Registrar Sanción")
             tipo_f = st.radio("Causa:", ["Normal", "Directa"], horizontal=True)
-            motivo = st.text_input("¿Por qué la falta?", placeholder="Ej: No trajo el uniforme lila")
-            if st.button("Guardar Falta"):
-                # Actualizar contadores
+            motivo = st.text_input("¿Por qué la falta?")
+            if st.button("Guardar"):
                 db.table("participantes").update({"amarillas_normales": an + 1 if tipo_f == "Normal" else an, "amarillas_directas": ad + 1 if tipo_f == "Directa" else ad}).eq("id", p["id"]).execute()
-                # Guardar en registros (reutilizamos la tabla registros para el historial)
                 db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Falta {tipo_f}: {motivo}"}).execute()
                 st.rerun()
-        
         with col_p:
             st.markdown("### 💵 Abono")
             monto = st.number_input("Monto ($):", min_value=0, step=100000)
@@ -77,40 +94,24 @@ def mostrar_crm():
                 db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Abono: ${monto:,.0f}"}).execute()
                 st.rerun()
 
-        # --- SECCIÓN VER DETALLE (HISTORIAL) ---
         st.divider()
         with st.expander("🔍 Ver Detalle e Historial"):
             logs = db.table("registros").select("*").eq("participante_id", p["id"]).order("created_at", desc=True).execute()
-            if logs.data:
-                for l in logs.data:
-                    st.write(f"📅 {l['fecha']} | {l['status']}")
-            else:
-                st.write("No hay eventos registrados.")
+            for l in (logs.data or []):
+                st.write(f"📅 {l['fecha']} | {l['status']}")
 
-        st.divider()
-        with st.form("ficha"):
-            st.subheader("📝 Ficha Técnica")
-            izq, der = st.columns(2)
-            n = izq.text_input("Nombre", value=p["nombre"]); h = der.text_input("Instagram", value=p["handle"])
-            ced = izq.text_input("Cédula", value=p.get("cedula", "")); sang = der.text_input("Sangre", value=p.get("tipo_sangre", ""))
-            if st.form_submit_button("Actualizar Ficha"):
-                db.table("participantes").update({"nombre":n,"handle":h,"cedula":ced,"tipo_sangre":sang}).eq("id", p["id"]).execute(); st.rerun()
-
-# 5. FLUJO PRINCIPAL
+# 6. FLUJO PRINCIPAL
 if check_login():
-    st.sidebar.image("https://i.ibb.co/Vp6q9F5/image-f23baf.png") # Aquí puedes poner el link real de tu logo
-    st.sidebar.divider()
-    opcion = st.sidebar.radio("Navegación", ["📱 Validación Robot", "👥 CRM Santas"])
-    if opcion == "📱 Validación Robot":
+    st.sidebar.radio("Navegación", ["📱 Validación Robot", "👥 CRM Santas"], key="nav")
+    if st.session_state.nav == "📱 Validación Robot":
         st.title("📊 Stories Tracker")
         logs = db.table("registros").select("*, participantes(nombre)").order("created_at", desc=True).limit(50).execute()
         for l in (logs.data or []):
-            if "Falta" not in l['status'] and "Abono" not in l['status']: # Filtramos solo robots
+            if "Falta" not in l['status'] and "Abono" not in l['status']:
                 c1, c2, c3 = st.columns([2, 2, 1])
                 c1.write(f"👤 {l['participantes']['nombre']}")
                 c2.write(f"📅 {l['fecha']}")
-                if l['status'] == "cumplido": c3.success("✅ OK")
-                else: c3.error("❌ NO")
+                st.success("✅ OK") if l['status'] == "cumplido" else st.error("❌ NO")
     else: mostrar_crm()
 else:
     st.title("💜 Santas FC - Admin"); st.info("Ingresa tus credenciales.")
