@@ -5,15 +5,11 @@ from datetime import datetime
 # 1. SETUP
 st.set_page_config(page_title="Santas Admin", page_icon="🛡️", layout="wide")
 
-# 2. CONEXIÓN DB
+# 2. CONEXIÓN DB (Simplificada para evitar errores)
 if "db" not in st.session_state:
-    try:
-        u = st.secrets["SUPABASE_URL"]
-        k = st.secrets["SUPABASE_KEY"]
-        st.session_state.db = create_client(u, k)
-    except Exception as e:
-        st.error(f"Error DB: {e}")
-        st.stop()
+    u = st.secrets["SUPABASE_URL"]
+    k = st.secrets["SUPABASE_KEY"]
+    st.session_state.db = create_client(u, k)
 
 db = st.session_state.db
 
@@ -107,15 +103,29 @@ def mostrar_crm():
                 st.success("¡Datos guardados!")
                 st.rerun()
 
-# 5. FLUJO PRINCIPAL
+# 5. ESTRUCTURA PRINCIPAL
 if check_login():
     st.sidebar.divider()
     opcion = st.sidebar.radio("Menú", ["📱 Validación", "👥 CRM"])
     
     if opcion == "📱 Validación":
         st.title("📊 Stories Tracker")
-        try:
-            logs = db.table("registros").select("*, participantes(nombre)").order("created_at", desc=True).limit(50).execute()
-            if logs.data:
-                for l in logs.data:
-                    c1,
+        logs = db.table("registros").select("*, participantes(nombre)").order("created_at", desc=True).limit(50).execute()
+        if logs.data:
+            for l in logs.data:
+                col1, col2, col3 = st.columns([2, 2, 1])
+                n_nena = l['participantes']['nombre'] if l['participantes'] else "N/A"
+                col1.write(f"👤 {n_nena}")
+                col2.write(f"📅 {l['fecha']}")
+                if l['status'] == "cumplido":
+                    col3.success("✅ OK")
+                else:
+                    col3.error("❌ NO")
+                st.divider()
+        else:
+            st.info("No hay datos todavía.")
+    else:
+        mostrar_crm()
+else:
+    st.title("Admin Santas")
+    st.info("Inicia sesión a la izquierda.")
