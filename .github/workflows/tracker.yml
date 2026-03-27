@@ -1,4 +1,4 @@
-name: Robot de Instagram Santas
+  name: Robot de Instagram Santas
 
 on:
   schedule:
@@ -20,6 +20,8 @@ jobs:
 
       - name: Instalar dependencias
         run: |
+          pip install supabase playwright
+          playwright install
           pip install supabase==2.0.3 playwright
           playwright install chromium
 
