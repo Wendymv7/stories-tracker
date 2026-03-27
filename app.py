@@ -1,13 +1,11 @@
-st.title("Prueba de conexión visual")
-
 import streamlit as st
 from supabase import create_client
 from datetime import datetime
 
-# Configuración básica de la página
+# 1. CONFIGURACIÓN E IMPORTACIONES (Siempre va primero)
 st.set_page_config(page_title="Santas Tracker & CRM", page_icon="🛡️", layout="wide")
 
-# 1. INICIALIZAR LA BASE DE DATOS
+# 2. INICIALIZAR LA BASE DE DATOS
 if "db" not in st.session_state:
     try:
         url = st.secrets["SUPABASE_URL"]
@@ -19,7 +17,7 @@ if "db" not in st.session_state:
 
 db = st.session_state.db
 
-# 2. SISTEMA DE LOGIN PARA ADMINISTRADORAS
+# 3. SISTEMA DE LOGIN PARA ADMINISTRADORAS
 def check_login():
     st.sidebar.title("🔐 Acceso Admin Santas")
     
@@ -49,7 +47,7 @@ def check_login():
             
     return False
 
-# 3. LÓGICA DEL CRM Y PERFILES
+# 4. LÓGICA DEL CRM Y PERFILES
 def check_cumpleanos(participantes):
     hoy = datetime.now()
     cumpleaneras = []
@@ -57,7 +55,6 @@ def check_cumpleanos(participantes):
     for p in participantes:
         if p.get("fecha_nacimiento"):
             try:
-                # Convertir el string de la BD a un objeto fecha de Python
                 fecha_nac = datetime.strptime(p["fecha_nacimiento"], "%Y-%m-%d")
                 if fecha_nac.month == hoy.month and fecha_nac.day == hoy.day:
                     cumpleaneras.append(p["nombre"])
@@ -72,7 +69,6 @@ def check_cumpleanos(participantes):
 def mostrar_crm():
     st.header("👥 CRM - Perfiles Santas")
     
-    # Consultar todas las niñas ordenadas alfabéticamente
     res = db.table("participantes").select("*").order("nombre").execute()
     participantes = res.data
     
@@ -80,25 +76,19 @@ def mostrar_crm():
         st.info("No hay perfiles registrados en la base de datos.")
         return
 
-    # Verificar si hay cumpleaños hoy
     check_cumpleanos(participantes)
-    
     st.markdown("---")
     
-    # Selector para buscar a la niña
     nombres = [p["nombre"] for p in participantes]
     seleccion = st.selectbox("🔍 Buscar perfil para visualizar o editar:", ["-- Seleccionar una cuenta --"] + nombres)
     
     if seleccion != "-- Seleccionar una cuenta --":
-        # Extraer los datos de la niña seleccionada
         perfil = next(p for p in participantes if p["nombre"] == seleccion)
         
         with st.form(f"form_editar_{perfil['id']}"):
             st.subheader(f"Ficha Técnica: {perfil['nombre']}")
             
-            # Formulario a dos columnas para mejor diseño
             col1, col2 = st.columns(2)
-            
             with col1:
                 nombre = st.text_input("Nombre Completo", value=perfil.get("nombre", ""))
                 handle = st.text_input("Instagram Handle", value=perfil.get("handle", ""))
@@ -107,10 +97,63 @@ def mostrar_crm():
                 correo = st.text_input("Correo Electrónico", value=perfil.get("correo", "") or "")
                 
             with col2:
-                # Lógica para preseleccionar el rol correcto
                 rol_actual = perfil.get("rol")
                 opciones_rol = ["futbolista", "modelo"]
                 index_rol = opciones_rol.index(rol_actual) if rol_actual in opciones_rol else 0
                     
                 rol = st.selectbox("Rol en Santas", opciones_rol, index=index_rol)
-                profesion = st.text
+                profesion = st.text_input("Profesión / Ocupación", value=perfil.get("profesion", "") or "")
+                tipo_sangre = st.text_input("Tipo de Sangre", value=perfil.get("tipo_sangre", "") or "")
+                direccion = st.text_input("Dirección de Residencia", value=perfil.get("direccion", "") or "")
+                
+            col3, col4 = st.columns(2)
+            with col3:
+                fnac_val = perfil.get("fecha_nacimiento")
+                fecha_nac = st.date_input("Fecha de Nacimiento", 
+                                          value=datetime.strptime(fnac_val, "%Y-%m-%d") if fnac_val else None)
+            with col4:
+                fing_val = perfil.get("fecha_ingreso_santas")
+                fecha_ingreso = st.date_input("Fecha de Ingreso a Santas", 
+                                              value=datetime.strptime(fing_val, "%Y-%m-%d") if fing_val else None)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            guardar = st.form_submit_button("💾 Guardar / Actualizar Perfil", type="primary")
+            
+            if guardar:
+                fnac_str = fecha_nac.strftime("%Y-%m-%d") if fecha_nac else None
+                fing_str = fecha_ingreso.strftime("%Y-%m-%d") if fecha_ingreso else None
+                
+                datos_actualizados = {
+                    "nombre": nombre,
+                    "handle": handle,
+                    "tiktok": tiktok,
+                    "cedula": cedula,
+                    "correo": correo,
+                    "rol": rol,
+                    "profesion": profesion,
+                    "tipo_sangre": tipo_sangre,
+                    "direccion": direccion,
+                    "fecha_nacimiento": fnac_str,
+                    "fecha_ingreso_santas": fing_str
+                }
+                
+                try:
+                    db.table("participantes").update(datos_actualizados).eq("id", perfil["id"]).execute()
+                    st.success("¡Perfil actualizado correctamente en la base de datos!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al guardar los datos: {e}")
+
+# 5. ESTRUCTURA PRINCIPAL DE LA APLICACIÓN
+if check_login():
+    st.sidebar.markdown("---")
+    menu = st.sidebar.radio("Navegación del Sistema", ["📱 Panel de Validación", "👥 CRM Perfiles Santas"])
+    
+    if menu == "📱 Panel de Validación":
+        st.title("📊 Stories Tracker - Panel Principal")
+        st.write("Bienvenida al centro de control. Aquí podrás verificar el cumplimiento de las etiquetas en Instagram.")
+        
+    elif menu == "👥 CRM Perfiles Santas":
+        mostrar_crm()
+else:
+    st.info("👈 Por favor, ingresa tus credenciales en el menú lateral para acceder al sistema.")
