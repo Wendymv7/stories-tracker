@@ -52,7 +52,6 @@ def check_cumpleanos(participantes):
         st.balloons()
         st.warning(f"🎉 **¡CUMPLEAÑOS HOY!**: {', '.join(cumples)}")
 
-# 4. VISTA DEL CRM COMPLETA
 def mostrar_crm():
     st.header("👥 CRM - Gestión de Santas")
     res = db.table("participantes").select("*").order("nombre").execute()
@@ -70,7 +69,7 @@ def mostrar_crm():
     if seleccion != "-- Seleccionar --":
         perfil = next(p for p in participantes if p["nombre"] == seleccion)
         
-        # --- PANEL DISCIPLINARIO (SISTEMA DE MULTAS) ---
+        # --- PANEL DISCIPLINARIO ---
         st.markdown(f"## ⚠️ Panel Disciplinario: {perfil['nombre']}")
         amarillas_n = perfil.get('amarillas_normales', 0) or 0
         amarillas_d = perfil.get('amarillas_directas', 0) or 0
@@ -82,34 +81,4 @@ def mostrar_crm():
         c3.metric("💸 Multa Acumulada", f"${multa:,.0f} COP")
 
         with st.expander("➕ Registrar Amonestación"):
-            tipo = st.radio("Causa:", ["Amarilla Normal (Retraso, Uniforme, Comida)", "Amarilla Directa (Inasistencia a evento, salida sin permiso)"])
-            if st.button("Guardar Amonestación"):
-                db.table("participantes").update({
-                    "amarillas_normales": amarillas_n + 1 if "Normal" in tipo else amarillas_n,
-                    "amarillas_directas": amarillas_d + 1 if "Directa" in tipo else amarillas_d
-                }).eq("id", perfil["id"]).execute()
-                st.success("Amonestación registrada.")
-                st.rerun()
-
-        st.markdown("---")
-        
-        # --- FICHA TÉCNICA COMPLETA ---
-        with st.form("ficha_completa"):
-            st.subheader(f"Ficha Técnica: {perfil['nombre']}")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                nombre = st.text_input("Nombre Completo", value=perfil.get("nombre", ""))
-                handle = st.text_input("Instagram Handle", value=perfil.get("handle", ""))
-                tiktok = st.text_input("Usuario de TikTok", value=perfil.get("tiktok", "") or "")
-                cedula = st.text_input("Documento de Identidad", value=perfil.get("cedula", "") or "")
-                correo = st.text_input("Correo Electrónico", value=perfil.get("correo", "") or "")
-                
-            with col2:
-                rol_actual = perfil.get("rol", "futbolista")
-                rol = st.selectbox("Rol en Santas", ["futbolista", "modelo"], index=0 if rol_actual == "futbolista" else 1)
-                profesion = st.text_input("Profesión / Ocupación", value=perfil.get("profesion", "") or "")
-                tipo_sangre = st.text_input("Tipo de Sangre", value=perfil.get("tipo_sangre", "") or "")
-                direccion = st.text_input("Dirección", value=perfil.get("direccion", "") or "")
-                
-            col3, col4 = st.columns(2)
+            tipo = st.radio("Causa:", ["Amarilla Normal (Retraso, Uniforme, Comida)", "Amarilla Directa (
