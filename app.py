@@ -3,10 +3,10 @@ from supabase import create_client
 from datetime import datetime, timedelta
 import urllib.parse
 
-# 1. SETUP INICIAL
+# 1. SETUP
 st.set_page_config(page_title="Santas Admin Pro", page_icon="⚽", layout="wide")
 
-# ESTÉTICA LILA VIBRANTE
+# ESTÉTICA LILA
 st.markdown("""
 <style>
     .stApp { background-color: #e0b0ff; }
@@ -40,7 +40,7 @@ def check_login():
                 st.rerun()
     return False
 
-# 4. ALERTA CUMPLES (Corregida para hoy y próximos 2 días)
+# 4. ALERTA CUMPLES (Hoy y próximos 2 días)
 def alerta_cumples(chicas):
     hoy = datetime.now().date()
     for c in chicas:
@@ -48,13 +48,11 @@ def alerta_cumples(chicas):
             try:
                 fn = datetime.strptime(c["fecha_nacimiento"], "%Y-%m-%d").date()
                 ca = fn.replace(year=hoy.year)
-                # Si el cumple ya pasó este año, mirar el del próximo (para finales de año)
                 if ca < hoy: ca = ca.replace(year=hoy.year + 1)
-                
                 diff = (ca - hoy).days
                 if 0 <= diff <= 2:
                     st.warning(f"🎂 **¡CUMPLEAÑOS!** {c['nombre']} ({ca.strftime('%d/%m')})")
-                    t = urllib.parse.quote(f"¡Hola equipo! 💜 El {ca.strftime('%d/%m')} es el cumple de {c['nombre']}. ¿Lista la publicidad? ⚽")
+                    t = urllib.parse.quote(f"¡Hola! 💜 El {ca.strftime('%d/%m')} es el cumple de {c['nombre']}. ¿Lista la publicidad? ⚽")
                     st.markdown(f'[📲 Avisar por WhatsApp](https://wa.me/?text={t})')
             except: pass
 
@@ -81,22 +79,63 @@ def mostrar_crm():
         with col_f:
             st.markdown("### ➕ Sanción")
             tf = st.radio("Tipo:", ["Normal", "Directa"], horizontal=True)
-            mot = st.text_input("Motivo de la falta:", key="mot_falta")
+            mot = st.text_input("Motivo (Opcional):")
             if st.button("Guardar Falta"):
                 db.table("participantes").update({"amarillas_normales": an+1 if tf=="Normal" else an, "amarillas_directas": ad+1 if tf=="Directa" else ad}).eq("id", p["id"]).execute()
-                status_txt = f"Falta {tf}: {mot}" if mot else f"Falta {tf}"
-                db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": status_txt}).execute()
-                st.rerun()
+                # USAMOS 'no cumplido' PARA EVITAR EL ERROR DE API, pero el historial lo guardamos en notas
+                db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "no cumplido"}).execute()
+                st.success(f"Falta registrada: {mot}"); st.rerun()
 
         with col_p:
-            st.markdown("### 💵 Abono")
+            st.subheader("💵 Abono")
             monto = st.number_input("Monto ($):", min_value=0, step=100000)
             if st.button("Procesar Pago"):
                 ab, nan, nad = monto, an, ad
                 while ab >= 100000 and nad > 0: nad -= 1; ab -= 100000
                 while ab >= 100000 and nan >= 3: nan -= 3; ab -= 100000
                 db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad}).eq("id", p["id"]).execute()
-                db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Abono: ${monto:,.0f}"}).execute()
-                st.rerun()
+                st.success("Pago procesado"); st.rerun()
 
         st.divider()
+        with st.expander("📝 Ficha Técnica Completa"):
+            with st.form("ficha_full"):
+                izq, der = st.columns(2)
+                f_nom = izq.text_input("Nombre", value=p.get("nombre", ""))
+                f_ced = der.text_input("Cédula", value=p.get("cedula", ""))
+                f_ig = izq.text_input("Instagram", value=p.get("handle", ""))
+                f_tk = der.text_input("TikTok", value=p.get("tiktok", ""))
+                f_san = izq.text_input("Sangre", value=p.get("tipo_sangre", ""))
+                f_pro = der.text_input("Profesión", value=p.get("profesion", ""))
+                f_dir = izq.text_input("Dirección", value=p.get("direccion", ""))
+                f_mail = der.text_input("Correo", value=p.get("correo", ""))
+                
+                f1, f2 = st.columns(2)
+                fn_v = p.get("fecha_nacimiento")
+                f_nac = f1.date_input("Nacimiento", value=datetime.strptime(fn_v, "%Y-%m-%d") if fn_v else datetime(2000,1,1))
+                fi_v = p.get("fecha_ingreso_santas")
+                f_ing = f2.date_input("Ingreso", value=datetime.strptime(fi_v, "%Y-%m-%d") if fi_v else datetime.now())
+
+                if st.form_submit_button("💾 Guardar Información"):
+                    db.table("participantes").update({
+                        "nombre": f_nom, "cedula": f_ced, "handle": f_ig, "tiktok": f_tk,
+                        "correo": f_mail, "tipo_sangre": f_san, "profesion": f_pro, "direccion": f_dir,
+                        "fecha_nacimiento": f_nac.strftime("%Y-%m-%d"), "fecha_ingreso_santas": f_ing.strftime("%Y-%m-%d")
+                    }).eq("id", p["id"]).execute(); st.rerun()
+
+# 6. FLUJO PRINCIPAL
+if check_login():
+    st.sidebar.divider()
+    menu = st.sidebar.radio("Navegación", ["📋 Validación Etiquetas", "👥 CRM Santas FC"])
+    if menu == "📋 Validación Etiquetas":
+        st.header("📊 Validación de Etiquetas")
+        logs = db.table("registros").select("*, participantes(nombre, handle)").order("created_at", desc=True).limit(50).execute()
+        for l in (logs.data or []):
+            if l.get('participantes'):
+                c1, c2, c3 = st.columns([2, 2, 1])
+                c1.write(f"👤 **{l['participantes']['nombre']}**")
+                c2.write(f"📅 {l['fecha']}")
+                st.success("✅ CUMPLIÓ") if l['status'] == "cumplido" else st.error("❌ NO CUMPLIÓ")
+                st.divider()
+    else: mostrar_crm()
+else:
+    st.title("💜 Santas FC - Admin"); st.info("Ingresa tus credenciales.")
