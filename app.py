@@ -50,7 +50,7 @@ def check_cumpleanos(participantes):
                datetime.strptime(p["fecha_nacimiento"], "%Y-%m-%d").day == hoy.day]
     if cumples:
         st.balloons()
-        st.warning(f"🎉 **¡CUMPLEAÑOS HOY!**: {', '.join(cumples)}")
+        st.warning(f"🎉 **CUMPLEAÑOS HOY**: {', '.join(cumples)}")
 
 def mostrar_crm():
     st.header("👥 CRM - Gestión de Santas")
@@ -64,21 +64,4 @@ def mostrar_crm():
     
     st.markdown("### 🔍 Buscar Perfil")
     nombres = [p["nombre"] for p in participantes]
-    seleccion = st.selectbox("Escribe el nombre de la niña:", ["-- Seleccionar --"] + nombres)
-    
-    if seleccion != "-- Seleccionar --":
-        perfil = next(p for p in participantes if p["nombre"] == seleccion)
-        
-        # --- PANEL DISCIPLINARIO ---
-        st.markdown(f"## ⚠️ Panel Disciplinario: {perfil['nombre']}")
-        amarillas_n = perfil.get('amarillas_normales', 0) or 0
-        amarillas_d = perfil.get('amarillas_directas', 0) or 0
-        multa = ((amarillas_n // 3) * 100000) + (amarillas_d * 100000)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🟨 Amarillas Normales", amarillas_n)
-        c2.metric("🟥 Amarillas Directas", amarillas_d)
-        c3.metric("💸 Multa Acumulada", f"${multa:,.0f} COP")
-
-        with st.expander("➕ Registrar Amonestación"):
-            tipo = st.radio("Causa:", ["Amarilla Normal (Retraso, Uniforme, Comida)", "Amarilla Directa (
+    seleccion = st.selectbox("Nombre de la niña:",
