@@ -85,7 +85,6 @@ def mostrar_crm():
             mot = st.text_input("Motivo / Comentario:")
             if st.button("Guardar Falta", type="primary"):
                 db.table("participantes").update({"amarillas_normales": an+1 if tf=="Normal" else an, "amarillas_directas": ad+1 if tf=="Directa" else ad}).eq("id", p["id"]).execute()
-                # Ya no insertamos "no cumplido" para no ensuciar al robot
                 try: db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": f"Falta {tf}"}).execute()
                 except: pass
                 st.success(f"Falta guardada: {mot}"); st.rerun()
@@ -106,7 +105,6 @@ def mostrar_crm():
                 
                 try:
                     db.table("participantes").update({"amarillas_normales": nan, "amarillas_directas": nad, "abonos": bolsa_abonos}).eq("id", p["id"]).execute()
-                    # Ya no insertamos "cumplido" falso
                     try: db.table("registros").insert({"participante_id": p["id"], "fecha": datetime.now().strftime("%Y-%m-%d"), "status": "Pago"}).execute()
                     except: pass
                     st.success("Pago procesado"); st.rerun()
@@ -144,21 +142,34 @@ def mostrar_crm():
 if check_login():
     st.sidebar.divider()
     menu = st.sidebar.radio("Navegación", ["📋 Validación Etiquetas", "👥 CRM Santas FC"])
+    
     if menu == "📋 Validación Etiquetas":
-        st.header("📊 Validación de Etiquetas")
-        logs = db.table("registros").select("*, participantes(nombre, handle)").order("created_at", desc=True).limit(50).execute()
-        for l in (logs.data or []):
-            if l.get('participantes') and "Falta" not in str(l['status']) and "Pago" not in str(l['status']):
+        hoy_str = datetime.now().strftime("%Y-%m-%d")
+        st.header(f"📊 Validación de Etiquetas ({hoy_str})")
+        
+        # 1. Traemos a TODAS las niñas
+        res_chicas = db.table("participantes").select("id, nombre, handle").order("nombre").execute()
+        lista_chicas = res_chicas.data or []
+        
+        # 2. Traemos los "cumplidos" que ha puesto el robot HOY
+        res_logs = db.table("registros").select("participante_id").eq("fecha", hoy_str).eq("status", "cumplido").execute()
+        ids_cumplidos = [log["participante_id"] for log in (res_logs.data or [])]
+        
+        if not lista_chicas:
+            st.info("No hay participantes en la base de datos.")
+        else:
+            for chica in lista_chicas:
                 c1, c2, c3 = st.columns([2, 2, 1])
-                c1.write(f"👤 **{l['participantes']['nombre']}**")
-                c2.write(f"📅 {l['fecha']}")
+                c1.write(f"👤 **{chica['nombre']}** (@{chica.get('handle', 'Sin IG')})")
+                c2.write(f"📅 {hoy_str}")
                 
-                # FIX VISUAL: Usamos un bloque if/else tradicional para que no imprima código basura
-                if l['status'] == "cumplido":
+                # Cruzamos datos: Si la niña está en la lista de los que cumplieron hoy...
+                if chica["id"] in ids_cumplidos:
                     c3.success("✅ CUMPLIÓ")
                 else:
                     c3.error("❌ NO CUMPLIÓ")
                 st.divider()
-    else: mostrar_crm()
+    else:
+        mostrar_crm()
 else:
     st.title("💜 Santas FC - Admin"); st.info("Ingresa tus credenciales.")
